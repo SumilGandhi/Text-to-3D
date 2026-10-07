@@ -40,34 +40,69 @@ function ScenePreview({ sceneSpec }) {
     directionalLight.position.set(4, 6, 5);
     scene.add(directionalLight);
 
-    const geometryMap = {
-      box: () => new THREE.BoxGeometry(1.6, 1.1, 1.1),
-      sphere: () => new THREE.SphereGeometry(0.9, 48, 32),
-      cylinder: () => new THREE.CylinderGeometry(0.8, 0.8, 1.8, 32),
-      torus: () => new THREE.TorusGeometry(0.8, 0.28, 20, 80),
-      cone: () => new THREE.ConeGeometry(0.95, 1.8, 32),
-    };
-
-    const geometry = geometryMap[sceneSpec.shape]();
-    const material = new THREE.MeshStandardMaterial({
-      color: sceneSpec.color,
-      metalness: 0.25,
-      roughness: 0.35,
-    });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.scale.setScalar(sceneSpec.scale);
-    scene.add(mesh);
-
     const grid = new THREE.GridHelper(10, 10, 0x334155, 0x1e293b);
     grid.position.y = -1.8;
     scene.add(grid);
+
+    const object = new THREE.Group();
+    const geometries = [];
+    const materials = [];
+    const part = (geometry, color, position = [0, 0, 0], scale = [1, 1, 1]) => {
+      const material = new THREE.MeshStandardMaterial({ color, metalness: 0.2, roughness: 0.4 });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(...position);
+      mesh.scale.set(...scale);
+      object.add(mesh);
+      geometries.push(geometry);
+      materials.push(material);
+      return mesh;
+    };
+    const color = sceneSpec.color;
+    const dark = '#111827';
+    const glass = '#93c5fd';
+    if (sceneSpec.object_type === 'car') {
+      part(new THREE.BoxGeometry(2.8, 0.6, 1.3), color, [0, 0, 0]);
+      part(new THREE.BoxGeometry(1.4, 0.55, 1.1), color, [0.2, 0.52, 0]);
+      [-0.95, 0.95].forEach((x) => [-0.72, 0.72].forEach((z) => {
+        part(new THREE.CylinderGeometry(0.3, 0.3, 0.18, 24), dark, [x, -0.38, z], [1, 1, 1]);
+        object.children.at(-1).rotation.x = Math.PI / 2;
+      }));
+      part(new THREE.BoxGeometry(0.7, 0.28, 0.04), glass, [0.2, 0.58, 0.56]);
+    } else if (sceneSpec.object_type === 'tree') {
+      part(new THREE.CylinderGeometry(0.28, 0.38, 1.8, 16), '#8b5a2b', [0, -0.5, 0]);
+      part(new THREE.SphereGeometry(1.05, 24, 16), color === '#f15bb5' ? '#22c55e' : color, [0, 0.8, 0]);
+    } else if (sceneSpec.object_type === 'rocket') {
+      part(new THREE.CylinderGeometry(0.55, 0.55, 1.8, 24), color, [0, 0, 0]);
+      part(new THREE.ConeGeometry(0.55, 0.9, 24), '#f8fafc', [0, 1.35, 0]);
+      part(new THREE.ConeGeometry(0.35, 0.7, 4), '#f97316', [0, -1.2, 0]);
+    } else if (sceneSpec.object_type === 'house') {
+      part(new THREE.BoxGeometry(1.8, 1.5, 1.6), color, [0, -0.2, 0]);
+      part(new THREE.ConeGeometry(1.35, 0.9, 4), '#b91c1c', [0, 1, 0], [1, 1, 0.85]);
+      part(new THREE.BoxGeometry(0.4, 0.75, 0.05), '#78350f', [0, -0.55, 0.83]);
+    } else if (sceneSpec.object_type === 'robot') {
+      part(new THREE.BoxGeometry(1.2, 1.3, 0.8), color, [0, -0.2, 0]);
+      part(new THREE.BoxGeometry(0.9, 0.7, 0.7), color, [0, 0.9, 0]);
+      part(new THREE.SphereGeometry(0.1, 16, 12), '#22d3ee', [-0.22, 0.95, 0.37]);
+      part(new THREE.SphereGeometry(0.1, 16, 12), '#22d3ee', [0.22, 0.95, 0.37]);
+    } else {
+      const geometryMap = {
+        box: () => new THREE.BoxGeometry(1.6, 1.1, 1.1),
+        sphere: () => new THREE.SphereGeometry(0.9, 48, 32),
+        cylinder: () => new THREE.CylinderGeometry(0.8, 0.8, 1.8, 32),
+        torus: () => new THREE.TorusGeometry(0.8, 0.28, 20, 80),
+        cone: () => new THREE.ConeGeometry(0.95, 1.8, 32),
+      };
+      part(geometryMap[sceneSpec.shape](), color);
+    }
+    object.scale.setScalar(sceneSpec.scale);
+    scene.add(object);
 
     let frameId;
 
     const animate = () => {
       frameId = window.requestAnimationFrame(animate);
-      mesh.rotation.y += 0.01;
-      mesh.rotation.x += 0.004;
+      object.rotation.y += 0.01;
+      object.rotation.x += 0.004;
       controls.update();
       renderer.render(scene, camera);
     };
@@ -88,8 +123,8 @@ function ScenePreview({ sceneSpec }) {
       window.removeEventListener('resize', handleResize);
       window.cancelAnimationFrame(frameId);
       controls.dispose();
-      geometry.dispose();
-      material.dispose();
+      geometries.forEach((geometry) => geometry.dispose());
+      materials.forEach((material) => material.dispose());
       renderer.dispose();
       mountNode.innerHTML = '';
     };
@@ -106,7 +141,7 @@ function App() {
     color: '#e63946',
     scale: 1,
     title: 'Generated box',
-    description: 'Your 3D preview will appear here.',
+    description: 'Your free local 3D preview will appear here.',
   });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -131,11 +166,14 @@ function App() {
       });
 
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || 'Generation failed.');
+      }
       setSceneSpec(data.scene);
-      setStatus(`Backend received: ${data.prompt}`);
+      setStatus(`Generated locally from: ${data.prompt}`);
     } catch (error) {
       console.error(error);
-      setStatus('Could not connect to the backend.');
+      setStatus(error.message || 'Could not generate the model.');
     } finally {
       setIsLoading(false);
     }
@@ -147,7 +185,7 @@ function App() {
         <div className="eyebrow">Text to 3D</div>
         <h1>Generate a 3D object from text</h1>
         <p className="lede">
-          Enter a prompt, click Generate, and the backend will return a 3D scene spec that is rendered on the right.
+          Enter a prompt, click Generate, and a free local 3D preview will be created instantly.
         </p>
 
         <label className="field-label" htmlFor="prompt">Prompt</label>
@@ -166,16 +204,16 @@ function App() {
 
         <div className="scene-meta">
           <div>
-            <span>Shape</span>
-            <strong>{sceneSpec.shape}</strong>
+            <span>Provider</span>
+            <strong>Local</strong>
           </div>
           <div>
-            <span>Color</span>
-            <strong>{sceneSpec.color}</strong>
+            <span>Format</span>
+            <strong>Three.js</strong>
           </div>
           <div>
-            <span>Scale</span>
-            <strong>{sceneSpec.scale}</strong>
+            <span>Status</span>
+            <strong>{isLoading ? 'Generating' : 'Ready'}</strong>
           </div>
         </div>
       </section>

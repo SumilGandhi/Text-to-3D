@@ -10,7 +10,7 @@ from pydantic import BaseModel
 app = FastAPI(title="Text-to-3D Generator")
 frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
-#hi
+
 class GenerateRequest(BaseModel):
     prompt: str
 

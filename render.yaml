@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: text-to-3d
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /docs

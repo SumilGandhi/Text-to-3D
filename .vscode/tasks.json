@@ -1,0 +1,12 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Text-to-3D: Start Dev Server",
+      "type": "shell",
+      "command": "${workspaceFolder}\\frontend-start.bat",
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}

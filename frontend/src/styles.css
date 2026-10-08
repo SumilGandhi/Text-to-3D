@@ -93,6 +93,29 @@ textarea {
   outline: none;
 }
 
+select {
+  width: 100%;
+  padding: 13px 16px;
+  font-size: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.45);
+  color: #f8fafc;
+  outline: none;
+}
+
+.enhance-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #cbd5e1;
+  font-size: 0.92rem;
+}
+
+.enhance-toggle input {
+  accent-color: #7c3aed;
+}
+
 .generate-button {
   margin-top: 4px;
   padding: 15px 20px;
@@ -103,6 +126,57 @@ textarea {
   color: white;
   cursor: pointer;
   transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.blender-workflow {
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(37, 99, 235, 0.12);
+  border: 1px solid rgba(147, 197, 253, 0.2);
+}
+
+.blender-workflow .eyebrow {
+  margin-bottom: 6px;
+}
+
+.blender-workflow h3 {
+  margin: 0 0 6px;
+  color: #f8fafc;
+}
+
+.blender-workflow p {
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+
+.export-button {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #f97316;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.blender-button {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.blender-status {
+  margin-top: 10px;
+  font-size: 0.9rem;
+}
+
+.blender-workflow ol {
+  margin: 14px 0 0;
+  padding-left: 22px;
+  color: #cbd5e1;
+  line-height: 1.6;
+  font-size: 0.9rem;
 }
 
 .generate-button:hover {

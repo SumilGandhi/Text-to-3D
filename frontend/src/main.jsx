@@ -71,6 +71,50 @@ function ScenePreview({ sceneSpec }) {
       materials.push(material);
       return mesh;
     };
+    if (sceneSpec.dataset_model_url) {
+      fetch(sceneSpec.dataset_model_url)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`ModelNet40 mesh request failed: ${response.status}`);
+          }
+          return response.text();
+        })
+        .then((off) => {
+          const lines = off.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+          if (lines[0] !== 'OFF') {
+            throw new Error('Invalid OFF mesh header.');
+          }
+          const [vertexCount, faceCount] = lines[1].split(/\s+/).map(Number);
+          const vertices = lines.slice(2, 2 + vertexCount).flatMap((line) =>
+            line.split(/\s+/).slice(0, 3).map(Number),
+          );
+          const indices = [];
+          lines.slice(2 + vertexCount, 2 + vertexCount + faceCount).forEach((line) => {
+            const values = line.split(/\s+/).map(Number);
+            const count = values[0];
+            for (let index = 1; index < count - 1; index += 1) {
+              indices.push(values[1], values[index + 1], values[index + 2]);
+            }
+          });
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+          geometry.setIndex(indices);
+          geometry.computeVertexNormals();
+          const material = new THREE.MeshStandardMaterial({
+            color: sceneSpec.color,
+            metalness: 0.1,
+            roughness: 0.7,
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+          geometry.computeBoundingSphere();
+          const radius = geometry.boundingSphere?.radius || 1;
+          mesh.scale.setScalar(1.8 / radius);
+          object.add(mesh);
+          geometries.push(geometry);
+          materials.push(material);
+        })
+        .catch((error) => console.error('Could not load ModelNet40 mesh.', error));
+    }
     if (sceneSpec.model_url) {
       const loader = new GLTFLoader();
       loader.load(
@@ -80,11 +124,11 @@ function ScenePreview({ sceneSpec }) {
           gltf.scene.scale.setScalar(sceneSpec.scale || 1);
         },
         undefined,
-        (error) => console.error('Could not load Tripo model.', error),
+        (error) => console.error('Could not load GLB model.', error),
       );
     }
 
-    if (!sceneSpec.model_url) {
+    if (!sceneSpec.model_url && !sceneSpec.dataset_model_url) {
       const color = sceneSpec.color;
       const dark = '#111827';
       const glass = '#93c5fd';
@@ -234,8 +278,6 @@ function ScenePreview({ sceneSpec }) {
 
 function App() {
   const [prompt, setPrompt] = useState('A low-poly red sports car');
-  const [provider, setProvider] = useState('local');
-  const [enhancePrompt, setEnhancePrompt] = useState(false);
   const [status, setStatus] = useState('Describe an object, then click Generate.');
   const [sceneSpec, setSceneSpec] = useState({
     shape: 'box',
@@ -261,21 +303,13 @@ function App() {
     setStatus('Generating 3D scene...');
 
     try {
-      const startEndpoint = provider === 'tripo'
-        ? '/generate/tripo'
-        : provider === 'meshy'
-          ? '/generate/meshy'
-          : '/generate';
-      const statusEndpoint = provider === 'tripo' ? 'tripo' : 'meshy';
-      const providerName = provider === 'tripo' ? 'Tripo AI' : 'Meshy AI';
-      const response = await fetch(startEndpoint, {
+      const response = await fetch('/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           prompt: trimmedPrompt,
-          enhance_prompt: provider === 'local' && enhancePrompt,
         }),
       });
 
@@ -283,42 +317,11 @@ function App() {
       if (!response.ok) {
         throw new Error(data.detail || 'Generation failed.');
       }
-      if (provider === 'local') {
-        setSceneSpec(data.scene);
-        setHasGeneratedModel(true);
-        setStatus(data.generated_prompt
-          ? `Generated locally with OpenAI enhancement: ${data.generated_prompt}`
-          : `Generated locally from: ${data.prompt}`);
-      } else {
-        let task = data;
-        setStatus(`${providerName} is generating the model...`);
-        for (let attempt = 0; attempt < 60; attempt += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-          const taskResponse = await fetch(`/generate/${statusEndpoint}/status/${task.task_id}`);
-          task = await readJsonResponse(taskResponse, `${providerName} status check returned an invalid response.`);
-          if (!taskResponse.ok) {
-            throw new Error(task.detail || `${providerName} generation failed.`);
-          }
-          if (['success', 'succeeded'].includes(task.status)) {
-            setSceneSpec({
-              model_url: task.model_url,
-              scale: 1,
-              title: `Generated ${providerName} model`,
-              description: `Generated by ${providerName}.`,
-            });
-            setHasGeneratedModel(true);
-            setStatus(`Generated by ${providerName}.`);
-            break;
-          }
-          if (['failed', 'cancelled', 'banned', 'error'].includes(task.status)) {
-            throw new Error(`${providerName} generation ${task.status}.`);
-          }
-          setStatus(`${providerName} status: ${task.status}...`);
-        }
-        if (!['success', 'succeeded'].includes(task.status)) {
-          throw new Error(`${providerName} generation timed out.`);
-        }
-      }
+      setSceneSpec(data.scene);
+      setHasGeneratedModel(true);
+      setStatus(data.generated_prompt
+        ? `Generated locally with OpenAI enhancement: ${data.generated_prompt}`
+        : `Generated locally from: ${data.prompt}`);
     } catch (error) {
       console.error(error);
       setStatus(error.message || 'Could not generate the model.');
@@ -356,22 +359,6 @@ function App() {
         </p>
 
         <label className="field-label" htmlFor="prompt">Prompt</label>
-        <label className="field-label" htmlFor="provider">Generator</label>
-        <select id="provider" value={provider} onChange={(event) => setProvider(event.target.value)}>
-          <option value="local">Local preview (default)</option>
-          <option value="tripo">Tripo AI</option>
-          <option value="meshy">Meshy AI</option>
-        </select>
-        {provider === 'local' && (
-          <label className="enhance-toggle">
-            <input
-              type="checkbox"
-              checked={enhancePrompt}
-              onChange={(event) => setEnhancePrompt(event.target.checked)}
-            />
-            Enhance prompt with OpenAI
-          </label>
-        )}
         <textarea
           id="prompt"
           value={prompt}
@@ -424,10 +411,6 @@ function App() {
         )}
 
         <div className="scene-meta">
-          <div>
-            <span>Provider</span>
-            <strong>{provider === 'tripo' ? 'Tripo AI' : provider === 'meshy' ? 'Meshy AI' : 'Local'}</strong>
-          </div>
           <div>
             <span>Format</span>
             <strong>Three.js</strong>

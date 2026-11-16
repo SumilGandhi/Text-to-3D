@@ -235,6 +235,7 @@ function ScenePreview({ sceneSpec }) {
 function App() {
   const [prompt, setPrompt] = useState('A low-poly red sports car');
   const [status, setStatus] = useState('Describe an object, then click Generate.');
+  const [datasetUrl, setDatasetUrl] = useState('');
   const [sceneSpec, setSceneSpec] = useState({
     shape: 'box',
     color: '#e63946',
@@ -246,6 +247,29 @@ function App() {
   const [hasGeneratedModel, setHasGeneratedModel] = useState(false);
   const hasExportableModel = Boolean(sceneSpec.model_url);
   const [blenderStatus, setBlenderStatus] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/dataset')
+      .then(async (response) => {
+        const data = await readJsonResponse(response, 'The dataset configuration is invalid.');
+        if (!response.ok) {
+          throw new Error(data.detail || 'Dataset URL is unavailable.');
+        }
+        if (isMounted) {
+          setDatasetUrl(data.url);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setDatasetUrl('');
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleGenerate = async () => {
     const trimmedPrompt = prompt.trim();
@@ -325,6 +349,16 @@ function App() {
         <button className="generate-button" onClick={handleGenerate} disabled={isLoading}>
           {isLoading ? 'Generating...' : 'Generate 3D Model'}
         </button>
+
+        {datasetUrl && (
+          <div className="dataset-card">
+            <span className="field-label">Dataset</span>
+            <a href={datasetUrl} target="_blank" rel="noreferrer">
+              Open external dataset
+            </a>
+            <small>The dataset stays external and is not stored in this repository.</small>
+          </div>
+        )}
 
         <div className="status-card">{status}</div>
 

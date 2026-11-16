@@ -199,6 +199,24 @@ select {
   align-items: center;
 }
 
+.dataset-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(134, 239, 172, 0.2);
+}
+
+.dataset-card a {
+  color: #86efac;
+  overflow-wrap: anywhere;
+}
+
+.dataset-card small {
+  color: #cbd5e1;
+}
+
 .scene-meta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

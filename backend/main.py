@@ -15,6 +15,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 app = FastAPI(title="Text-to-3D Generator")
 frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+DATASET_URL = os.getenv("DATASET_URL", "").strip()
 class GenerateRequest(BaseModel):
     prompt: str
     enhance_prompt: bool = False
@@ -202,6 +203,16 @@ async def generate_model(request: GenerateRequest):
         "generated_prompt": generated_prompt,
         "scene": build_scene_spec(generated_prompt).model_dump(),
     }
+
+
+@app.get("/dataset")
+async def get_dataset():
+    if not DATASET_URL:
+        raise HTTPException(
+            status_code=404,
+            detail="DATASET_URL is not configured. Add it to the project .env file.",
+        )
+    return {"url": DATASET_URL}
 
 
 if frontend_dist.exists():

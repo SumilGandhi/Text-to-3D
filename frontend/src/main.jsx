@@ -71,50 +71,6 @@ function ScenePreview({ sceneSpec }) {
       materials.push(material);
       return mesh;
     };
-    if (sceneSpec.dataset_model_url) {
-      fetch(sceneSpec.dataset_model_url)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error(`ModelNet40 mesh request failed: ${response.status}`);
-          }
-          return response.text();
-        })
-        .then((off) => {
-          const lines = off.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-          if (lines[0] !== 'OFF') {
-            throw new Error('Invalid OFF mesh header.');
-          }
-          const [vertexCount, faceCount] = lines[1].split(/\s+/).map(Number);
-          const vertices = lines.slice(2, 2 + vertexCount).flatMap((line) =>
-            line.split(/\s+/).slice(0, 3).map(Number),
-          );
-          const indices = [];
-          lines.slice(2 + vertexCount, 2 + vertexCount + faceCount).forEach((line) => {
-            const values = line.split(/\s+/).map(Number);
-            const count = values[0];
-            for (let index = 1; index < count - 1; index += 1) {
-              indices.push(values[1], values[index + 1], values[index + 2]);
-            }
-          });
-          const geometry = new THREE.BufferGeometry();
-          geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-          geometry.setIndex(indices);
-          geometry.computeVertexNormals();
-          const material = new THREE.MeshStandardMaterial({
-            color: sceneSpec.color,
-            metalness: 0.1,
-            roughness: 0.7,
-          });
-          const mesh = new THREE.Mesh(geometry, material);
-          geometry.computeBoundingSphere();
-          const radius = geometry.boundingSphere?.radius || 1;
-          mesh.scale.setScalar(1.8 / radius);
-          object.add(mesh);
-          geometries.push(geometry);
-          materials.push(material);
-        })
-        .catch((error) => console.error('Could not load ModelNet40 mesh.', error));
-    }
     if (sceneSpec.model_url) {
       const loader = new GLTFLoader();
       loader.load(
@@ -128,7 +84,7 @@ function ScenePreview({ sceneSpec }) {
       );
     }
 
-    if (!sceneSpec.model_url && !sceneSpec.dataset_model_url) {
+    if (!sceneSpec.model_url) {
       const color = sceneSpec.color;
       const dark = '#111827';
       const glass = '#93c5fd';

@@ -6,7 +6,6 @@ from typing import Literal
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -16,16 +15,6 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 app = FastAPI(title="Text-to-3D Generator")
 frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
-MODELNET40_CATEGORIES = (
-    "airplane", "bathtub", "bed", "bench", "bookshelf", "bottle", "bowl", "car",
-    "chair", "cone", "cup", "curtain", "desk", "door", "dresser", "flower_pot",
-    "glass_box", "guitar", "keyboard", "lamp", "laptop", "mantel", "monitor",
-    "night_stand", "person", "piano", "plant", "radio", "range_hood", "sink",
-    "sofa", "stairs", "stool", "table", "tent", "toilet", "tv_stand", "vase",
-    "wardrobe", "xbox",
-)
-
-
 class GenerateRequest(BaseModel):
     prompt: str
     enhance_prompt: bool = False
@@ -89,7 +78,6 @@ class SceneSpec(BaseModel):
     scale: float
     title: str
     description: str
-    dataset_model_url: str | None = None
 
 
 CSS_COLOR_NAMES = set(
@@ -139,14 +127,6 @@ def extract_color(prompt: str) -> str:
 def build_scene_spec(prompt: str) -> SceneSpec:
     normalized_prompt = prompt.lower()
     color = extract_color(prompt)
-    dataset_category = next(
-        (
-            category
-            for category in MODELNET40_CATEGORIES
-            if re.search(rf"\b{re.escape(category.replace('_', ' '))}\b", normalized_prompt)
-        ),
-        None,
-    )
     if any(word in normalized_prompt for word in ["truck", "lorry", "pickup"]):
         shape, object_type = "box", "truck"
     elif any(word in normalized_prompt for word in ["sniper", "rifle"]):
@@ -197,16 +177,7 @@ def build_scene_spec(prompt: str) -> SceneSpec:
         color=color,
         scale=round(scale, 2),
         title=f"Generated {object_type}",
-        description=(
-            f"Loaded a ModelNet40 {dataset_category} mesh for '{prompt}'."
-            if dataset_category
-            else f"Free local preview mapped '{prompt}' to a {object_type} scene object."
-        ),
-        dataset_model_url=(
-            f"/dataset/modelnet/{dataset_category}"
-            if dataset_category
-            else None
-        ),
+        description=f"Free local preview mapped '{prompt}' to a {object_type} scene object.",
     )
 
 
@@ -231,32 +202,6 @@ async def generate_model(request: GenerateRequest):
         "generated_prompt": generated_prompt,
         "scene": build_scene_spec(generated_prompt).model_dump(),
     }
-
-
-@app.get("/dataset/modelnet/{category}")
-async def get_modelnet_sample(category: str):
-    if not re.fullmatch(r"[a-z_]+", category):
-        raise HTTPException(status_code=422, detail="Invalid ModelNet40 category.")
-    category_dir = Path(__file__).resolve().parent.parent / "ModelNet40" / "ModelNet40" / category / "train"
-    samples = sorted(category_dir.glob("*.off"))
-    if not samples:
-        raise HTTPException(status_code=404, detail="ModelNet40 category not found.")
-    return FileResponse(samples[0], media_type="text/plain")
-
-
-@app.get("/dataset/modelnet")
-async def list_modelnet_categories():
-    dataset_root = Path(__file__).resolve().parent.parent / "ModelNet40" / "ModelNet40"
-    categories = []
-    for category in MODELNET40_CATEGORIES:
-        samples = sorted((dataset_root / category / "train").glob("*.off"))
-        if samples:
-            categories.append({
-                "name": category,
-                "sample_url": f"/dataset/modelnet/{category}",
-                "train_count": len(samples),
-            })
-    return {"dataset": "ModelNet40", "categories": categories}
 
 
 if frontend_dist.exists():

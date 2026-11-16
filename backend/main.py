@@ -16,9 +16,18 @@ app = FastAPI(title="Text-to-3D Generator")
 frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 DATASET_URL = os.getenv("DATASET_URL", "").strip()
+LOCAL_AI_URL = os.getenv("LOCAL_AI_URL", "").rstrip("/")
+LOCAL_AI_SECRET = os.getenv("LOCAL_AI_SECRET", "")
+
+GENERATED_DIR = Path(__file__).resolve().parent / "generated"
+GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+
+generation_jobs = {}
 class GenerateRequest(BaseModel):
     prompt: str
     enhance_prompt: bool = False
+class LocalGenerateRequest(BaseModel):
+    prompt: str    
 
 
 def configured_api_key(name: str, placeholder: str) -> str:
@@ -70,6 +79,31 @@ async def enhance_prompt_with_openai(prompt: str) -> str:
     if not enhanced:
         raise HTTPException(status_code=502, detail="OpenAI returned an empty enhanced prompt.")
     return enhanced
+
+async def submit_local_generation(prompt: str) -> str:
+    if not LOCAL_AI_URL or not LOCAL_AI_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="Local AI server is not configured."
+        )
+
+    headers = {"X-API-Secret": LOCAL_AI_SECRET}
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{LOCAL_AI_URL}/generate",
+                headers=headers,
+                json={"prompt": prompt},
+            )
+            response.raise_for_status()
+            return response.json()["job_id"]
+
+    except httpx.HTTPError as error:
+        raise HTTPException(
+            status_code=502,
+            detail="Could not contact the local AI server."
+        ) from error
 
 
 class SceneSpec(BaseModel):
@@ -194,15 +228,112 @@ app.add_middleware(
 @app.post("/generate")
 async def generate_model(request: GenerateRequest):
     prompt = request.prompt.strip()
+
     if not prompt:
         raise HTTPException(status_code=422, detail="Prompt cannot be empty.")
-    generated_prompt = await enhance_prompt_with_openai(prompt) if request.enhance_prompt else prompt
-    return {
-        "message": "Generation completed",
+
+    generated_prompt = (
+        await enhance_prompt_with_openai(prompt)
+        if request.enhance_prompt
+        else prompt
+    )
+
+    job_id = await submit_local_generation(generated_prompt)
+
+    generation_jobs[job_id] = {
         "prompt": prompt,
         "generated_prompt": generated_prompt,
-        "scene": build_scene_spec(generated_prompt).model_dump(),
+        "status": "queued",
+        "scene": None,
     }
+
+    return {
+        "message": "Generation job submitted",
+        "job_id": job_id,
+        "status": "queued",
+    }
+
+
+
+@app.get("/generate/{job_id}")
+async def get_generation_status(job_id: str):
+    job = generation_jobs.get(job_id)
+
+    # Recover an already-generated model if the job is no longer in memory.
+    if job is None:
+        model_filename = f"{job_id}.glb"
+        model_path = GENERATED_DIR / model_filename
+
+        if not model_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="Generation job not found."
+            )
+
+        scene = build_scene_spec("A low-poly red sports car").model_dump()
+        scene["model_url"] = f"/generated/{model_filename}"
+
+        return {
+            "status": "completed",
+            "scene": scene,
+        }
+
+    if job["status"] == "completed":
+        return {
+            "status": "completed",
+            "scene": job["scene"],
+        }
+
+    headers = {"X-API-Secret": LOCAL_AI_SECRET}
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.get(
+                f"{LOCAL_AI_URL}/status/{job_id}",
+                headers=headers,
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            if result["status"] == "failed":
+                job["status"] = "failed"
+                return {
+                    "status": "failed",
+                    "error": result.get("error", "Generation failed."),
+                }
+
+            if result["status"] != "completed":
+                job["status"] = result["status"]
+                return {"status": result["status"]}
+
+            file_response = await client.get(
+                f"{LOCAL_AI_URL}/result/{job_id}",
+                headers=headers,
+            )
+            file_response.raise_for_status()
+
+        model_filename = f"{job_id}.glb"
+        model_path = GENERATED_DIR / model_filename
+        model_path.write_bytes(file_response.content)
+
+        scene = build_scene_spec(job["generated_prompt"]).model_dump()
+        scene["model_url"] = f"/generated/{model_filename}"
+
+        job["scene"] = scene
+        job["status"] = "completed"
+
+        return {
+            "status": "completed",
+            "scene": scene,
+        }
+
+    except httpx.HTTPError as error:
+        raise HTTPException(
+            status_code=502,
+            detail="Could not retrieve the generated 3D model."
+        ) from error
+
+
 
 
 @app.get("/dataset")
@@ -215,5 +346,12 @@ async def get_dataset():
     return {"url": DATASET_URL}
 
 
+app.mount(
+    "/generated",
+    StaticFiles(directory=GENERATED_DIR),
+    name="generated",
+)
+
 if frontend_dist.exists():
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+

@@ -13,3 +13,13 @@ frontend/dist/
 # Large datasets excluded from Git
 /ModelNet40/
 /Face dataset/
+
+# Local Shap-E source, model checkpoints, and generated files
+/shap-e/
+/shap_e_model_cache/
+/backend/generated/
+
+# Local Shap-E source, model checkpoints, and generated files
+/shap-e/
+/shap_e_model_cache/
+/backend/generated/
